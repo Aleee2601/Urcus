@@ -47,6 +47,20 @@ enum Sport: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Aceeași culoare ca `color`, ca număr hex (pentru widget, care nu vede `Theme`).
+    var hex: UInt32 {
+        switch self {
+        case .run: 0xF2B48C
+        case .trail: 0x7FCBA4
+        case .hike: 0xD9C27A
+        case .walk: 0xC9D6A0
+        case .gym: 0xA996D6
+        case .swim: 0x8CB8F2
+        case .bike: 0x7CC6C9
+        case .rest, .other: 0x9AA8A1
+        }
+    }
+
     /// Sporturi la care are sens să afișăm ritmul (min/km) în loc de viteză.
     var usesPace: Bool { [.run, .trail, .hike, .walk].contains(self) }
 

@@ -105,26 +105,61 @@ final class SyncService: ObservableObject {
 }
 
 /// Bifează automat antrenamentele planificate cu activitățile din aceeași zi.
+/// O activitate bifează un antrenament doar dacă seamănă cu ținta lui (distanță, urcare, durată),
+/// ca o plimbare de 2 km să nu bifeze tura lungă de 18 km.
 enum WorkoutMatcher {
+    /// Cât din țintă trebuie atins ca activitatea să fie considerată potrivită.
+    static let minFraction = 0.4
+
+    /// Scor de potrivire între 0 și 1, sau `nil` dacă activitatea nu poate bifa antrenamentul.
+    static func score(workout: PlannedWorkout, activity: ActivityRecord) -> Double? {
+        guard activity.sport.matches(workout.sport) else { return nil }
+
+        var ratios: [Double] = []
+        if let km = workout.targetDistanceKm, km > 0 { ratios.append(activity.distanceKm / km) }
+        if let e = workout.targetElevation, e >= 150 { ratios.append(activity.elevationGain / Double(e)) }
+        if let m = workout.targetDurationMin, m > 0 { ratios.append(activity.durationSeconds / 60 / Double(m)) }
+
+        if ratios.contains(where: { $0 < minFraction }) { return nil }
+
+        // Cu cât activitatea e mai aproape de țintă (în ambele sensuri), cu atât scorul e mai mare.
+        let closeness = ratios.isEmpty ? 0.5 : ratios.map { min($0, 1 / $0) }.reduce(0, +) / Double(ratios.count)
+        let sameSport = activity.sport == workout.sport ? 1.0 : 0.6
+        return sameSport * 0.5 + closeness * 0.5
+    }
+
+    /// Perechi (antrenament, activitate) alese greedy pe scor, câte o activitate la un antrenament.
+    static func assignments(workouts: [PlannedWorkout], activities: [ActivityRecord]) -> [(PlannedWorkout, ActivityRecord)] {
+        var used = Set(workouts.compactMap(\.completedActivityId))
+        let byDay = Dictionary(grouping: activities) { Cal.ro.startOfDay(for: $0.startDate) }
+        let open = workouts.filter {
+            $0.completedActivityId == nil && !$0.skipped && !$0.ignoreAutoMatch && $0.sport != .rest
+        }
+
+        var pairs: [(w: PlannedWorkout, a: ActivityRecord, score: Double)] = []
+        for w in open {
+            for a in byDay[Cal.ro.startOfDay(for: w.date)] ?? [] where !used.contains(a.garminId) {
+                if let s = score(workout: w, activity: a) { pairs.append((w, a, s)) }
+            }
+        }
+        pairs.sort { $0.score != $1.score ? $0.score > $1.score : $0.w.date < $1.w.date }
+
+        var done = Set<ObjectIdentifier>()
+        var result: [(PlannedWorkout, ActivityRecord)] = []
+        for p in pairs where !used.contains(p.a.garminId) && !done.contains(ObjectIdentifier(p.w)) {
+            used.insert(p.a.garminId)
+            done.insert(ObjectIdentifier(p.w))
+            result.append((p.w, p.a))
+        }
+        return result
+    }
+
     @MainActor
     static func match(context: ModelContext) {
         guard let workouts = try? context.fetch(FetchDescriptor<PlannedWorkout>()),
               let activities = try? context.fetch(FetchDescriptor<ActivityRecord>()) else { return }
-
-        var used = Set(workouts.compactMap(\.completedActivityId))
-        let byDay = Dictionary(grouping: activities) { Cal.ro.startOfDay(for: $0.startDate) }
-
-        for workout in workouts.sorted(by: { $0.date < $1.date })
-        where workout.completedActivityId == nil && !workout.skipped && !workout.ignoreAutoMatch && workout.sport != .rest {
-            let day = Cal.ro.startOfDay(for: workout.date)
-            guard let candidates = byDay[day] else { continue }
-            let best = candidates
-                .filter { !used.contains($0.garminId) && $0.sport.matches(workout.sport) }
-                .max { $0.durationSeconds < $1.durationSeconds }
-            if let best {
-                workout.completedActivityId = best.garminId
-                used.insert(best.garminId)
-            }
+        for (workout, activity) in assignments(workouts: workouts, activities: activities) {
+            workout.completedActivityId = activity.garminId
         }
     }
 }

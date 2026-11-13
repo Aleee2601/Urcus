@@ -8,6 +8,9 @@ struct PlanView: View {
     @State private var editing: PlannedWorkout?
     @State private var addingNew = false
     @State private var confirmDelete = false
+    @State private var confirmReplan = false
+    @State private var replanMessage: String?
+    @Query(sort: \ActivityRecord.startDate, order: .reverse) private var activities: [ActivityRecord]
     @State private var selectedWeek: Int?
 
     private var activePlan: TrainingPlan? { plans.first(where: \.isActive) ?? plans.first }
@@ -29,6 +32,22 @@ struct PlanView: View {
             .sheet(isPresented: $showGenerator) { PlanGeneratorView() }
             .sheet(item: $editing) { WorkoutEditor(workout: $0, plan: $0.plan) }
             .sheet(isPresented: $addingNew) { WorkoutEditor(workout: nil, plan: activePlan) }
+            .confirmationDialog("Recalculezi planul de azi încolo?", isPresented: $confirmReplan, titleVisibility: .visible) {
+                Button("Recalculează") {
+                    guard let plan = activePlan else { return }
+                    let n = PlanGenerator.replan(plan, activities: activities, context: context)
+                    WorkoutMatcher.match(context: context)
+                    try? context.save()
+                    replanMessage = "Am refăcut \(n) antrenamente, pornind de la ce ai alergat în ultimele 4 săptămâni."
+                }
+            } message: {
+                Text("Antrenamentele de azi încolo care nu sunt făcute se înlocuiesc (și cele editate de tine). Tura lungă pornește de la cea mai lungă ieșire recentă. Ce e în trecut rămâne neatins.")
+            }
+            .alert("Plan recalculat", isPresented: Binding(get: { replanMessage != nil }, set: { if !$0 { replanMessage = nil } })) {
+                Button("OK") { replanMessage = nil }
+            } message: {
+                Text(replanMessage ?? "")
+            }
             .confirmationDialog("Ștergi planul „\(activePlan?.name ?? "")”?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Șterge planul și antrenamentele", role: .destructive) {
                     if let plan = activePlan { context.delete(plan); try? context.save() }
@@ -46,6 +65,9 @@ struct PlanView: View {
         Button("Antrenament nou", systemImage: "plus") { addingNew = true }
             .disabled(activePlan == nil)
         Button("Plan nou…", systemImage: "wand.and.stars") { showGenerator = true }
+        if let plan = activePlan, plan.daysLeft >= 0 {
+            Button("Recalculează de aici", systemImage: "arrow.triangle.2.circlepath") { confirmReplan = true }
+        }
         if plans.count > 1 {
             Section("Planurile mele") {
                 ForEach(plans) { plan in

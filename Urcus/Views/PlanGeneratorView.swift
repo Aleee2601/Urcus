@@ -36,8 +36,22 @@ struct PlanGeneratorView: View {
                     Toggle("Înot", isOn: $options.includeSwim)
                 } header: {
                     Text("Nivel de pornire")
+                }
+
+                Section {
+                    LabeledContent("Dealul tău") {
+                        TextField("ex. Tâmpa", text: $options.hillName)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    dayPicker("Alergare ușoară", \.easyRun)
+                    if options.includeGym { dayPicker("Sală", \.gym) }
+                    dayPicker(options.hillName.isEmpty ? "Urcare" : options.hillName, \.hill)
+                    if options.includeSwim { dayPicker("Înot", \.swim) }
+                    dayPicker("Tura lungă", \.long)
+                } header: {
+                    Text("Săptămâna ta")
                 } footer: {
-                    Text("Săptămâna tip: marți alergare ușoară, miercuri sală, joi Tâmpa, vineri înot, sâmbătă tura lungă. La fiecare a 4-a săptămână volumul scade, iar în ultimele 2 săptămâni dinaintea cursei se reduce treptat. Poți modifica orice antrenament după aceea.")
+                    Text("La fiecare a 4-a săptămână volumul scade, iar în ultimele 2 săptămâni dinaintea cursei se reduce treptat. Poți modifica orice antrenament după aceea.")
                 }
 
                 if weeks < 6 {
@@ -63,6 +77,14 @@ struct PlanGeneratorView: View {
         #if os(macOS)
         .frame(minWidth: 480, minHeight: 560)
         #endif
+    }
+
+    private func dayPicker(_ title: String, _ key: WritableKeyPath<WeekSchedule, Int>) -> some View {
+        Picker(title, selection: Binding(
+            get: { options.schedule[keyPath: key] },
+            set: { options.schedule[keyPath: key] = $0 })) {
+            ForEach(0..<7, id: \.self) { Text(WeekSchedule.weekdayNames[$0]).tag($0) }
+        }
     }
 
     private func create() {

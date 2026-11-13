@@ -9,6 +9,15 @@ Aplicație personală SwiftUI: plan de antrenament, istoric și statistici din G
 - **Statistici**: grafic pe ultimele 12 săptămâni (km / D+ / ore pe sport), totaluri pe an și cât de mult ai respectat planul.
 - **Setări**: cheia Garmin (stă în Keychain), sincronizare, explorator de date brute (somn, HRV, Body Battery, puls, stres).
 
+## Noutăți
+- **Plan configurabil**: alegi zilele fiecărui antrenament și dealul tău; **Recalculează de aici** (din meniul planului) reface antrenamentele nefăcute pornind de la ce ai alergat în ultimele 4 săptămâni.
+- **Potrivire mai atentă**: o activitate bifează un antrenament doar dacă are cel puțin 40% din distanța / urcarea / durata țintă.
+- **Odihnă pe ecranul Azi**: semafor din somn, HRV și Body Battery (dacă Garmin le trimite; altfel cardul nu apare).
+- **Cheia Garmin**: avertisment pe Azi și notificare cu 14 și 3 zile înainte să expire.
+- **Copie de siguranță**: Setări → exportă / importă planurile ca fișier JSON.
+- **Widget** pe iPhone cu antrenamentul de azi (citește din App Group `group.ro.alexandra.urcus`).
+- **Teste**: ⌘U în Xcode (`UrcusTests`).
+
 ## Design
 Stilul „Amurg alpin”: fundal verde-noapte, accent piersică, mov pentru urcare, salvie pentru „făcut”, fontul Manrope (inclus, licență OFL în `Resources/Fonts`).
 - **iPhone**: bară de tab-uri plutitoare, cardul zilei cu creasta de munte, banda săptămânii, inel de progres.

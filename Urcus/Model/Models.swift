@@ -45,6 +45,8 @@ final class TrainingPlan {
     var endDate: Date
     var isActive: Bool
     var createdAt: Date
+    /// Opțiunile cu care a fost generat planul (JSON), ca să-l putem recalcula mai târziu.
+    var optionsData: Data?
     @Relationship(deleteRule: .cascade, inverse: \PlannedWorkout.plan)
     var workouts: [PlannedWorkout] = []
 
