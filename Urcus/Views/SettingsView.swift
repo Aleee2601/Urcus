@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var sync: SyncService
@@ -13,6 +14,10 @@ struct SettingsView: View {
     @State private var testing = false
     @State private var historyDays = 365
     @State private var confirmWipe = false
+    @State private var exportDoc: BackupDocument?
+    @State private var showExporter = false
+    @State private var showImporter = false
+    @State private var backupMessage: (ok: Bool, text: String)?
 
     var body: some View {
         NavigationStack {
@@ -22,12 +27,13 @@ struct SettingsView: View {
                     if Platform.isMac {
                         HStack(alignment: .top, spacing: 20) {
                             VStack(spacing: 20) { garminCard; syncCard }
-                            VStack(spacing: 20) { ApiExplorerCard(enabled: hasKey); dataCard }
+                            VStack(spacing: 20) { ApiExplorerCard(enabled: hasKey); backupCard; dataCard }
                         }
                     } else {
                         garminCard
                         syncCard
                         ApiExplorerCard(enabled: hasKey)
+                        backupCard
                         dataCard
                         Text("Urcuș · date din Garmin Connect Personal API. Fontul Manrope e licențiat OFL.")
                             .appFont(12).foregroundStyle(Theme.muted)
@@ -42,6 +48,14 @@ struct SettingsView: View {
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
             #endif
+            .fileExporter(isPresented: $showExporter, document: exportDoc ?? BackupDocument(),
+                          contentType: .json, defaultFilename: "urcus-backup-\(Fmt.isoDay(.now))") { result in
+                if case .failure(let error) = result { backupMessage = (false, error.localizedDescription) }
+                else { backupMessage = (true, "Copia a fost salvată.") }
+            }
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+                restore(result)
+            }
             .confirmationDialog("Ștergi toate activitățile din aplicație?", isPresented: $confirmWipe, titleVisibility: .visible) {
                 Button("Șterge", role: .destructive) {
                     try? context.delete(model: ActivityRecord.self)
@@ -76,8 +90,15 @@ struct SettingsView: View {
                 SettingRow("Cheie") {
                     Label("Salvată în Keychain", systemImage: "lock.fill").foregroundStyle(Theme.text)
                 }
-                SettingRow("Expiră", last: true) {
+                SettingRow("Expiră", last: keyExpiry > 0) {
                     Text(expiryText).foregroundStyle(expiryColor)
+                }
+                if keyExpiry <= 0 {
+                    SettingRow("Data expirării", last: true) {
+                        DatePicker("", selection: $newKeyExpiry, in: Date()..., displayedComponents: .date)
+                            .labelsHidden()
+                            .onChange(of: newKeyExpiry) { _, date in setExpiry(date) }
+                    }
                 }
                 HStack(spacing: 10) {
                     Button { Task { await test() } } label: {
@@ -90,6 +111,8 @@ struct SettingsView: View {
                     .disabled(testing)
                     Button("Înlocuiește cheia") {
                         KeychainStore.delete(KeychainStore.apiKeyAccount)
+                        keyExpiry = 0
+                        KeyExpiry.cancelReminders()
                         Task { await GarminClient.shared.forgetToken() }
                         hasKey = false
                         testResult = nil
@@ -128,18 +151,21 @@ struct SettingsView: View {
 
     private var expiryText: String {
         guard keyExpiry > 0 else { return "nu știm" }
-        let date = Date(timeIntervalSince1970: keyExpiry)
-        let days = Cal.ro.dateComponents([.day], from: .now, to: date).day ?? 0
-        let formatted = date.formatted(.dateTime.day().month(.wide).year().locale(Fmt.locale))
-        if days < 0 { return "a expirat (\(formatted))" }
-        if days <= 14 { return "\(formatted) · în \(days) zile" }
-        return formatted
+        let formatted = Date(timeIntervalSince1970: keyExpiry).formatted(.dateTime.day().month(.wide).year().locale(Fmt.locale))
+        switch KeyExpiry.status(expiry: keyExpiry) {
+        case .expired: return "a expirat (\(formatted))"
+        case .soon(let days): return "\(formatted) · în \(days) zile"
+        default: return formatted
+        }
     }
 
     private var expiryColor: Color {
-        guard keyExpiry > 0 else { return Theme.muted }
-        let days = Cal.ro.dateComponents([.day], from: .now, to: Date(timeIntervalSince1970: keyExpiry)).day ?? 0
-        return days <= 14 ? Theme.coral : Theme.text
+        KeyExpiry.status(expiry: keyExpiry).needsAttention ? Theme.coral : Theme.text
+    }
+
+    private func setExpiry(_ date: Date) {
+        keyExpiry = date.timeIntervalSince1970
+        KeyExpiry.scheduleReminders(expiry: date)
     }
 
     // MARK: Sincronizare
@@ -196,6 +222,48 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: Backup
+
+    private var backupCard: some View {
+        SettingsCard {
+            Text("Copie de siguranță").appFont(18, .heavy).foregroundStyle(Theme.text)
+            Text("Salvează planurile (cu antrenamentele editate, făcute sau sărite) într-un fișier. Activitățile nu intră în copie: se readuc din Garmin.")
+                .appFont(13).foregroundStyle(Theme.muted).padding(.vertical, 6)
+            HStack(spacing: 10) {
+                Button("Exportă planurile") {
+                    do {
+                        exportDoc = BackupDocument(data: try BackupService.export(context: context))
+                        showExporter = true
+                    } catch {
+                        backupMessage = (false, error.localizedDescription)
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle(height: 40))
+                Button("Importă din fișier") { showImporter = true }
+                    .buttonStyle(SecondaryButtonStyle(height: 40))
+            }
+            .padding(.top, 6)
+            if let backupMessage {
+                Text(backupMessage.text).appFont(13, .semibold)
+                    .foregroundStyle(backupMessage.ok ? Theme.sage : Theme.coral).padding(.top, 8)
+            }
+        }
+    }
+
+    private func restore(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let added = try BackupService.restore(Data(contentsOf: url), into: context)
+            WorkoutMatcher.match(context: context)
+            try? context.save()
+            backupMessage = (true, added == 0 ? "Planurile din fișier erau deja aici." : "Am adăugat \(added) \(added == 1 ? "plan" : "planuri").")
+        } catch {
+            backupMessage = (false, "Nu am putut citi fișierul: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: Acțiuni
 
     private func saveKey() {
@@ -204,7 +272,7 @@ struct SettingsView: View {
             testResult = (false, "Nu am putut salva cheia în Keychain.")
             return
         }
-        keyExpiry = newKeyExpiry.timeIntervalSince1970
+        setExpiry(newKeyExpiry)
         keyInput = ""
         hasKey = true
         Task {

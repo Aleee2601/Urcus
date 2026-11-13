@@ -8,8 +8,6 @@ targets:
   Urcus:
     type: application
     supportedDestinations: [iOS, macOS]
-    sources:
-      - path: Urcus
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ro.alexandra.urcus
@@ -27,3 +25,37 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         ENABLE_HARDENED_RUNTIME: YES
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Config/Urcus-macOS.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": Config/Urcus-iOS.entitlements
+    sources:
+      - path: Urcus
+      - path: Shared
+    dependencies:
+      - target: UrcusWidget
+        platformFilter: iOS
+  UrcusWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: UrcusWidget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ro.alexandra.urcus.widget
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Config/Widget-Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: "Urcuș"
+        CODE_SIGN_ENTITLEMENTS: Config/UrcusWidget.entitlements
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
+  UrcusTests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: UrcusTests
+    dependencies:
+      - target: Urcus
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ro.alexandra.urcus.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"

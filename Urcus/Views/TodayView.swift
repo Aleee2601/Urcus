@@ -7,6 +7,8 @@ struct TodayView: View {
     @Query(sort: \PlannedWorkout.date) private var allWorkouts: [PlannedWorkout]
     @Query(sort: \ActivityRecord.startDate, order: .reverse) private var activities: [ActivityRecord]
     @Query(sort: \TrainingPlan.createdAt, order: .reverse) private var plans: [TrainingPlan]
+    @StateObject private var readiness = ReadinessService()
+    @AppStorage("garminKeyExpiry") private var keyExpiry: Double = 0
     @State private var editing: PlannedWorkout?
     @State private var addingNew = false
 
@@ -47,6 +49,7 @@ struct TodayView: View {
             .scrollIndicators(.hidden)
             .screenBackground()
             .refreshable { await sync.sync(context: context) }
+            .task { await readiness.refresh() }
             .navigationDestination(for: ActivityRecord.self) { ActivityDetailView(activity: $0) }
             #if os(iOS)
             .toolbar(.hidden, for: .navigationBar)
@@ -73,6 +76,8 @@ struct TodayView: View {
             } else {
                 RestDayCard()
             }
+
+            readinessCard
 
             VStack(alignment: .leading, spacing: 14) {
                 SectionHeading(title: "Săptămâna asta", trailing: weekRange)
@@ -110,6 +115,8 @@ struct TodayView: View {
 
             errorBanner
 
+            readinessCard
+
             HStack(alignment: .top, spacing: 20) {
                 Group {
                     if let workout = todays.first {
@@ -144,7 +151,20 @@ struct TodayView: View {
     // MARK: Bucăți comune
 
     @ViewBuilder
+    private var readinessCard: some View {
+        if let r = readiness.readiness, r.hasData { ReadinessCard(readiness: r) }
+    }
+
+    @ViewBuilder
     private var errorBanner: some View {
+        if let text = KeyExpiry.message(for: KeyExpiry.status(expiry: keyExpiry)), sync.hasKey {
+            Label(text, systemImage: "key.fill")
+                .appFont(14, .semibold)
+                .foregroundStyle(Theme.peach)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card(radius: 16, fill: Theme.peach.opacity(0.08), stroke: Theme.peach.opacity(0.3))
+        }
         if let error = sync.errorMessage {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .appFont(14, .semibold)

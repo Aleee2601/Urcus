@@ -60,7 +60,9 @@ struct RootView: View {
             .task { await sync.syncIfStale(context: context) }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await sync.syncIfStale(context: context) } }
+                if phase == .background { WidgetSync.update(context: context) }
             }
+            .onChange(of: sync.lastSync) { _, _ in WidgetSync.update(context: context) }
     }
 
     @ViewBuilder
